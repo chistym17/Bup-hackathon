@@ -1,0 +1,8 @@
+.env
+venv/
+__pycache__/
+*.pyc
+*.lp
+*.mps
+*.sol
+README.md
