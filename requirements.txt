@@ -7,4 +7,3 @@ python-dotenv
 pulp
 gunicorn
 
-chisty17/gridwise-energy@sha256:f76d18127aa4e14bb7e05d02b4a3bca99fefe00d83e12d9cd1c26cd3b38ec28b
