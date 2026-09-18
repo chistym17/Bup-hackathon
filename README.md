@@ -77,37 +77,52 @@ Locally use port `8000` if `PORT` is unset:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-## Quick test
+## Quick test (no local files needed)
 
-Live:
+Health:
 
 ```bash
 curl -s https://gridwiseai.onrender.com/health
 ```
 
+Full optimize call — builds the sample JSON in memory (only needs `curl` + `python3`):
+
 ```bash
 curl -sS https://gridwiseai.onrender.com/optimize-energy \
   -H 'Content-Type: application/json' \
-  --data-binary @samples/grid101_request.json
+  -d "$(python3 - <<'PY'
+import json
+hours = [{
+  "hour": h,
+  "demand_kwh": 180 if h < 8 else 220,
+  "solar_kwh": 80 if 10 <= h <= 16 else 0,
+  "tariff_bdt_per_kwh": 6 if h < 8 else (12 if h in (18, 19, 20) else 8),
+} for h in range(24)]
+print(json.dumps({
+  "scenario_id": "GRID-101",
+  "operator_notes": [
+    "Solar output will drop to about 20% from 1 PM to 3 PM.",
+    "Do not charge the battery between 2 PM and 4 PM.",
+    "The cafeteria menu changes tomorrow.",
+  ],
+  "hours": hours,
+  "battery": {
+    "capacity_kwh": 500,
+    "initial_energy_kwh": 200,
+    "minimum_energy_kwh": 50,
+    "max_charge_kwh_per_hour": 100,
+    "max_discharge_kwh_per_hour": 100,
+  },
+}))
+PY
+)"
 ```
 
-Local:
+Expected fields: `scenario_id`, `directive_interpretation`, `hourly_plan`, `total_grid_kwh`, `total_cost_bdt`, `peak_grid_kwh`, `plan_summary`.
 
-```bash
-curl -s http://127.0.0.1:8000/health
-```
+## Sample smoke test (after cloning the repo)
 
-```bash
-curl -sS http://127.0.0.1:8000/optimize-energy \
-  -H 'Content-Type: application/json' \
-  --data-binary @samples/grid101_request.json
-```
-
-Expected response fields: `scenario_id`, `directive_interpretation` (one entry per note), `hourly_plan` (24 hours), `total_grid_kwh`, `total_cost_bdt`, `peak_grid_kwh`, `plan_summary`.
-
-## Sample smoke test
-
-Runs three cases against the live API (2 valid scenarios + 1 invalid request):
+Runs three cases: 2 valid + 1 invalid (expects 400). Needs the `samples/` folder from the repo.
 
 | Sample | Expected |
 | ------ | -------- |
@@ -116,14 +131,10 @@ Runs three cases against the live API (2 valid scenarios + 1 invalid request):
 | `samples/03_bad_request.json` | 400 — more than 3 operator notes |
 
 ```bash
+git clone https://github.com/chistym17/Bup-hackathon.git
+cd Bup-hackathon
 pip install httpx
 python scripts/smoke_test.py https://gridwiseai.onrender.com
-```
-
-Local server:
-
-```bash
-python scripts/smoke_test.py http://127.0.0.1:8000
 ```
 
 ## Docker fallback
