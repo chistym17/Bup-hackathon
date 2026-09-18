@@ -105,6 +105,27 @@ curl -sS http://127.0.0.1:8000/optimize-energy \
 
 Expected response fields: `scenario_id`, `directive_interpretation` (one entry per note), `hourly_plan` (24 hours), `total_grid_kwh`, `total_cost_bdt`, `peak_grid_kwh`, `plan_summary`.
 
+## Sample smoke test
+
+Runs three cases against the live API (2 valid scenarios + 1 invalid request):
+
+| Sample | Expected |
+| ------ | -------- |
+| `samples/01_ok_solar_nocharge.json` | 200 — solar cut + no-charge + no_op |
+| `samples/02_ok_reserve_gridcap.json` | 200 — reserve + grid cap + no-discharge |
+| `samples/03_bad_request.json` | 400 — more than 3 operator notes |
+
+```bash
+pip install httpx
+python scripts/smoke_test.py https://gridwiseai.onrender.com
+```
+
+Local server:
+
+```bash
+python scripts/smoke_test.py http://127.0.0.1:8000
+```
+
 ## Docker fallback
 
 Image (exact digest):
@@ -140,9 +161,3 @@ docker run --rm -p 8000:8000 \
 | Optimizer | PuLP + CBC (MILP) |
 | Hosting | Render (`gridwiseai.onrender.com`) |
 
-## Limitations
-
-- Needs at least one valid LLM API key for the full `/optimize-energy` path.
-- Organizer scoring scenarios are assumed feasible (per problem statement).
-- Free Render instances may cold-start after idle; allow a short warm-up before judging.
-- Do not commit `.env` or bake secrets into the image.
