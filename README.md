@@ -1,0 +1,148 @@
+# GridWise Smart Campus Energy Optimization
+
+HTTP API for BUP CSE Fest 2026 preliminary: interpret operator notes with an LLM, validate directives, then optimize a 24-hour campus energy schedule with PuLP/CBC.
+
+| Resource | URL |
+| -------- | --- |
+| Live API | https://gridwiseai.onrender.com |
+| Health | https://gridwiseai.onrender.com/health |
+| Source | https://github.com/chistym17/Bup-hackathon |
+
+## Pipeline
+
+```
+POST /optimize-energy
+        │
+        ▼
+┌───────────────────────┐
+│  LLM Interpreter      │  Groq (default) → Gemini (fallback)
+│  operator_notes →     │  structured directive JSON
+│  directive candidates │
+└───────────┬───────────┘
+            ▼
+┌───────────────────────┐
+│  Deterministic        │  allowed types, hours 0–23, factor/reserve/grid
+│  Guardrails           │  bad note → safe no_op (no invented directives)
+└───────────┬───────────┘
+            ▼
+┌───────────────────────┐
+│  Optimizer (PuLP+CBC) │  apply directives, minimize Σ grid × tariff
+│  24h schedule         │  balance, battery, end-of-day neutrality
+└───────────┬───────────┘
+            ▼
+┌───────────────────────┐
+│  Replay check         │  same rules the judge uses
+└───────────┬───────────┘
+            ▼
+   JSON: interpretation + hourly_plan + totals
+```
+
+Endpoints:
+
+- `GET /health` → `{"status":"ok"}`
+- `POST /optimize-energy` → interpretation + 24h plan
+
+## Local setup
+
+```bash
+git clone https://github.com/chistym17/Bup-hackathon.git
+cd Bup-hackathon
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Edit `.env` (names only — do not commit secrets):
+
+```
+GROQ_API_KEY=...
+GEMINI_API_KEY=...
+```
+
+Models (see `llmclient/config.py`):
+
+- Default: Groq `openai/gpt-oss-20b`
+- Fallback: Gemini `gemini-3.6-flash`
+
+Start command (local and Render):
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Locally use port `8000` if `PORT` is unset:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+## Quick test
+
+Live:
+
+```bash
+curl -s https://gridwiseai.onrender.com/health
+```
+
+```bash
+curl -sS https://gridwiseai.onrender.com/optimize-energy \
+  -H 'Content-Type: application/json' \
+  --data-binary @samples/grid101_request.json
+```
+
+Local:
+
+```bash
+curl -s http://127.0.0.1:8000/health
+```
+
+```bash
+curl -sS http://127.0.0.1:8000/optimize-energy \
+  -H 'Content-Type: application/json' \
+  --data-binary @samples/grid101_request.json
+```
+
+Expected response fields: `scenario_id`, `directive_interpretation` (one entry per note), `hourly_plan` (24 hours), `total_grid_kwh`, `total_cost_bdt`, `peak_grid_kwh`, `plan_summary`.
+
+## Docker fallback
+
+Image (exact digest):
+
+```
+chisty17/gridwise-energy@sha256:f76d18127aa4e14bb7e05d02b4a3bca99fefe00d83e12d9cd1c26cd3b38ec28b
+```
+
+Also tagged: `chisty17/gridwise-energy:v1`
+
+```bash
+docker pull chisty17/gridwise-energy@sha256:f76d18127aa4e14bb7e05d02b4a3bca99fefe00d83e12d9cd1c26cd3b38ec28b
+docker run --rm -p 8000:8000 chisty17/gridwise-energy@sha256:f76d18127aa4e14bb7e05d02b4a3bca99fefe00d83e12d9cd1c26cd3b38ec28b
+curl -s http://127.0.0.1:8000/health
+```
+
+`/health` works with no API keys. For `/optimize-energy` pass keys:
+
+```bash
+docker run --rm -p 8000:8000 \
+  -e GROQ_API_KEY=... \
+  -e GEMINI_API_KEY=... \
+  chisty17/gridwise-energy@sha256:f76d18127aa4e14bb7e05d02b4a3bca99fefe00d83e12d9cd1c26cd3b38ec28b
+```
+
+## Stack
+
+| Piece | Choice |
+| ----- | ------ |
+| API | FastAPI + Uvicorn |
+| LLM | Groq → Gemini |
+| Guardrails | Deterministic validator |
+| Optimizer | PuLP + CBC (MILP) |
+| Hosting | Render (`gridwiseai.onrender.com`) |
+
+## Limitations
+
+- Needs at least one valid LLM API key for the full `/optimize-energy` path.
+- Organizer scoring scenarios are assumed feasible (per problem statement).
+- Free Render instances may cold-start after idle; allow a short warm-up before judging.
+- Do not commit `.env` or bake secrets into the image.
